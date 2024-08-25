@@ -1,6 +1,8 @@
 import akka.Done;
 import akka.NotUsed;
 import akka.actor.ActorSystem;
+import akka.japi.Pair;
+import akka.japi.Pair$;
 import akka.stream.ClosedShape;
 import akka.stream.Outlet;
 import akka.stream.UniformFanInShape;
@@ -16,6 +18,7 @@ import java.util.stream.Collectors;
 
 import jdk.jshell.JShell;
 import models.*;
+import org.mockito.internal.matchers.Not;
 
 public class AuthGraphDSL {
     public static void main(String[] args){
@@ -37,30 +40,44 @@ public class AuthGraphDSL {
                             final UniformFanOutShape<String, String> paymentIdBCast = builder.add(Broadcast.create(2));
 
                             final Flow<String, String, NotUsed> tenderInitial =
-                                    tenderRetrieveFlow(tenders, (Tender tender, String key) -> {
-                                        System.out.println("checking tender: " + tender.paymentId() + " key: " + key);
-                                        return tender.paymentId() == key;}, system)
+                                    tenderRetrieveFlow(tenders, (Tender tender, String key) -> tender.paymentId() == key, system)
                                             .map(x -> x.clientMatcher());
 
                             final Flow<String, String, NotUsed> settlementInitial =
                                     settlementRetrieveFlow(settlements, (Settlement settlement, String key) -> settlement.paymentId() == key, system)
                                             .map(x -> x.clientMatcher());
 
-                            final UniformFanInShape<String, String> merge = builder.add(Merge.create(2));
+                            final UniformFanInShape<String, String> merge1 = builder.add(Merge.create(2));
+
+                            final UniformFanOutShape<String, String> paymentIdStage2BCast = builder.add(Broadcast.create(2));
+
+                            final Flow<String, Pair<Settlement, Settlement>, NotUsed> settlementFinal = settlementRetrieveFlow(settlements, (Settlement settlement, String key) -> settlement.clientMatcher() == key, system)
+                                    .map(x -> new Pair<>(x,x));
+
+                            final Flow<Pair<Settlement, Settlement>, Pair<Settlement, Settlement>, NotUsed> flowPairSettlement = Flow.create();
+
+                            final FlowWithContext<Settlement, Settlement, String, Settlement, NotUsed> afterSettlementFinal =
+                                    flowPairSettlement.<Settlement,Settlement, Settlement>asFlowWithContext(Pair::create, Pair::second)
+                                            .map(Pair::first)
+                                            .map(x -> x.paymentId());
+
+                            final Flow<String, Pair<Tender, Tender>, NotUsed> tenderFinal = tenderRetrieveFlow(tenders, (Tender tender, String key) -> tender.clientMatcher() == key, system)
+                                    .map(x -> new Pair<>(x,x));
+
+                            final Flow<Pair<Tender, Tender>, Pair<Tender, Tender>, NotUsed> flowPairTender = Flow.create();
+
+                            final FlowWithContext<Tender, Tender, String, Tender, NotUsed> afterTenderFinal =
+                                    flowPairTender.<Tender,Tender, Tender>asFlowWithContext(Pair::create, Pair::second)
+                                            .map(Pair::first)
+                                            .map(x -> x.paymentId());
+
 
                             builder.from(source).viaFanOut(paymentIdBCast);
 
-                            builder.from(paymentIdBCast.out(0)).via(builder.add(tenderInitial)).toInlet(merge.in(0));
-                            builder.from(paymentIdBCast.out(1)).via(builder.add(settlementInitial)).toInlet(merge.in(1));
+                            builder.from(paymentIdBCast.out(0)).via(builder.add(tenderInitial)).toInlet(merge1.in(0));
+                            builder.from(paymentIdBCast.out(1)).via(builder.add(settlementInitial)).toInlet(merge1.in(1));
 
-                            builder.from(merge).via(builder.add(
-                                    Flow.of(String.class).map(x -> {
-                                        System.out.println("Received: " + x);
-                                        return x;}
-                                    )
-                            )).to(out);
-
-//                            builder.from(merge).to(out);
+                            builder.from(merge1).to(out);
 
                             return ClosedShape.getInstance();
                         }
@@ -79,9 +96,6 @@ public class AuthGraphDSL {
                 {
                     CompletionStage<List<Tender>> getMatchingTenders =  Source
                             .from(tenders)
-                            .map(x -> {
-                                System.out.println("Running from inside tender");
-                                return x;})
                             .filter(tender -> bi.apply(tender, key))
                             .runWith(Sink.collect(Collectors.toList()), system);
                     return Source.from(getMatchingTenders.toCompletableFuture().get());

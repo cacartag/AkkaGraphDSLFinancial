@@ -1,5 +1,6 @@
 import akka.Done;
 import akka.actor.ActorSystem;
+import akka.japi.Pair;
 import akka.stream.javadsl.RunnableGraph;
 import akka.stream.javadsl.Sink;
 import akka.testkit.javadsl.TestKit;
@@ -19,16 +20,16 @@ import static junit.framework.Assert.assertEquals;
 public class AuthGraphDSLTest {
 
     @Test
-    public void runAuthGraph() throws Exception {
+    public void runAuthGraphScenario1() throws Exception {
 
         AuthGraphDSL testGraph = new AuthGraphDSL();
-
         ActorSystem system = ActorSystem.create("testActorSystem");
 
         Auth testAuth = new Auth("paymentId1", "Auth1");
 
         Tender testTender1 = new Tender("paymentId1", "clientMatcher1",
                 "invoiceId1", "tenderPayload1");
+
         Settlement testSettlement1 = new Settlement("paymentId1", "invoiceId1",
                 "clientMatcher1", "settlementPayload1");
 
@@ -37,14 +38,6 @@ public class AuthGraphDSLTest {
 
         List<Settlement> settlementList = new ArrayList();
         settlementList.add(testSettlement1);
-
-
-        Sink<Object, CompletionStage<Done>> sink1 = Sink.ignore();
-        Sink<String, CompletionStage<List<String>>> sink2 = Sink.collect(Collectors.toList());
-
-
-
-        final TestKit probe = new TestKit(system);
 
         RunnableGraph<CompletionStage<Set<String>>> authGraph = testGraph.getTransactionFromAuth(testAuth, tenderList, settlementList, system);
 
@@ -55,10 +48,56 @@ public class AuthGraphDSLTest {
         List<String> expect = new ArrayList();
         expect.add("clientMatcher1");
 
-        assertEquals(expect, result.stream().toList());
-//        Thread.sleep(4000);
-//        System.out.println("Running from tests!!!");
+        result.stream().forEach(System.out::println);
 
+        assertEquals(expect, result.stream().toList());
     }
 
+    @Test
+    public void runAuthGraphScenario2() throws Exception {
+
+        AuthGraphDSL testGraph = new AuthGraphDSL();
+
+        ActorSystem system = ActorSystem.create("testActorSystem");
+
+        Auth testAuth = new Auth("paymentId1", "Auth1");
+
+        Tender testTender1 = new Tender("paymentId1", "clientMatcher1",
+                "invoiceId1", "tenderPayload1");
+        Tender testTender2 = new Tender("paymentId1", "clientMatcher2",
+                "invoiceId2", "tenderPayload1");
+        Tender testTender3 = new Tender("paymentId2", "clientMatcher4",
+                "invoiceId3", "tenderPayload4");
+        Tender testTender4 = new Tender("paymentId3", "clientMatcher5",
+                "invoiceId4", "tenderPayload5");
+
+        Settlement testSettlement1 = new Settlement("paymentId1", "invoiceId1",
+                "clientMatcher1", "settlementPayload1");
+
+        List<Tender> tenderList = new ArrayList();
+        tenderList.add(testTender1);
+        tenderList.add(testTender2);
+        tenderList.add(testTender3);
+        tenderList.add(testTender4);
+
+        List<Settlement> settlementList = new ArrayList();
+        settlementList.add(testSettlement1);
+
+        RunnableGraph<CompletionStage<Set<String>>> authGraph = testGraph.getTransactionFromAuth(testAuth, tenderList, settlementList, system);
+
+        CompletionStage<Set<String>> running = authGraph.run(system);
+
+        final Set<String> result = running.toCompletableFuture().get(3, TimeUnit.SECONDS);
+
+        List<String> expect = new ArrayList();
+        expect.add("clientMatcher1");
+        expect.add("clientMatcher2");
+
+        Pair<Settlement, Settlement> n = new Pair(testSettlement1, testSettlement1);
+
+        result.stream().forEach(System.out::println);
+
+        assertEquals(expect, result.stream().toList());
+
+    }
 }
