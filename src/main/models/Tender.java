@@ -9,6 +9,6 @@ public record Tender(
 
     @Override
     public String toString() {
-        return "Tender type, paymentId" + paymentId + " clientMatcher " + clientMatcher + " payload" + payload;
+        return "Tender type, paymentId: " + paymentId + " clientMatcher: " + clientMatcher + " payload: " + payload;
     }
 }

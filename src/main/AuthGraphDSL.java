@@ -25,10 +25,8 @@ public class AuthGraphDSL {
         System.out.println("Hello World from financial DSL");
     }
 
-//    List<Transaction>
     RunnableGraph<CompletionStage<List<TransactionType>>> getTransactionFromAuth(Auth auth, List<Tender> tenders, List<Settlement> settlements, ActorSystem system){
 
-//        final Sink<String, CompletionStage<List<String>>> allSink = Sink.collect(Collectors.toList());
         final Sink<TransactionType, CompletionStage<List<TransactionType>>> allSink = Sink.collect(Collectors.toList());
 
         final RunnableGraph<CompletionStage<List<TransactionType>>> result =
@@ -51,19 +49,19 @@ public class AuthGraphDSL {
 
                             final UniformFanInShape<String, String> merge1 = builder.add(Merge.create(2));
 
+
                             final Flow<String,String, NotUsed> deduplicate =
                                     Flow.of(String.class).statefulMapConcat(
 
                                             () -> {
-                                                List<String> passed = new ArrayList<String>();
+                                                List<String> passed = new ArrayList<>();
 
                                                 return (String str1) -> {
-                                                    if(passed.contains(str1))
-                                                        return Collections.emptyList();
-                                                    else {
+                                                    if(!passed.contains(str1)) {
                                                         passed.add(str1);
-                                                        return new ArrayList<>(passed);
+                                                        return Collections.singletonList(str1);
                                                     }
+                                                    return Collections.emptyList();
                                                 };
                                             }
                                     );
@@ -98,16 +96,26 @@ public class AuthGraphDSL {
 //                                            .map(Pair::first)
 //                                            .map(x -> x.paymentId());
 
-
                             builder.from(source).viaFanOut(paymentIdBCast);
 
                             builder.from(paymentIdBCast.out(0)).via(builder.add(tenderInitial)).toInlet(merge1.in(0));
                             builder.from(paymentIdBCast.out(1)).via(builder.add(settlementInitial)).toInlet(merge1.in(1));
 
-                            builder.from(merge1).via(builder.add(deduplicate)).viaFanOut(paymentIdStage2BCast);
+                            builder.from(merge1)
+                                    .via(builder.add(deduplicate))
+                                    .viaFanOut(paymentIdStage2BCast);
 
-                            builder.from(paymentIdStage2BCast.out(0)).via(builder.add(tenderFinal)).toInlet(merge2.in(0));
-                            builder.from(paymentIdStage2BCast.out(1)).via(builder.add(settlementFinal)).toInlet(merge2.in(1));
+                            builder.from(paymentIdStage2BCast.out(0))
+
+                                    .via(builder.add(tenderFinal))
+                                    .toInlet(merge2.in(0));
+
+                            builder.from(paymentIdStage2BCast.out(1)).via(builder.add(settlementFinal))
+//                                    .via(builder.add(Flow.of(TransactionType.class).map(x -> {
+//                                        System.out.println("In Settlement Stream: "+x);
+//                                        return x;
+//                                    })))
+                                    .toInlet(merge2.in(1));
 
                             builder.from(merge2).to(out);
 
