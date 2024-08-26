@@ -5,7 +5,7 @@ public record Tender(
         String clientMatcher,
         String invoiceId,
         String payload
-) implements TransactionType{
+) implements TransactionType {
 
     @Override
     public String toString() {

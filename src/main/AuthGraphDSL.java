@@ -76,6 +76,13 @@ public class AuthGraphDSL {
 
                             final UniformFanInShape<TransactionType, TransactionType> merge2 = builder.add(Merge.create(2));
 
+                            final Flow<Pair<TransactionType, TransactionType>, Pair<TransactionType, TransactionType>, NotUsed> flowPairTransactions = Flow.create();
+
+                            final FlowWithContext<TransactionType, TransactionType, String, TransactionType, NotUsed> stage2PaymentId =
+                                    flowPairTransactions.<TransactionType, TransactionType, TransactionType>asFlowWithContext(Pair::create, Pair::second)
+                                            .map(Pair::first)
+                                            .map(TransactionType::paymentId);
+
 //                            final Flow<String, Pair<Settlement, Settlement>, NotUsed> settlementFinal = settlementRetrieveFlow(settlements, (Settlement settlement, String key) -> settlement.clientMatcher() == key, system)
 //                                    .map(x -> new Pair<>(x,x));
 //
@@ -130,15 +137,13 @@ public class AuthGraphDSL {
 
     Flow<String, Tender, NotUsed> tenderRetrieveFlow(List<Tender> tenders, BiFunction<Tender, String, Boolean> bi, ActorSystem system){
 
-
         return Flow.of(String.class).flatMapConcat(key ->
                 {
                     CompletionStage<List<Tender>> getMatchingTenders =  Source
                             .from(tenders)
                             .filter(tender -> bi.apply(tender, key))
                             .runWith(Sink.collect(Collectors.toList()), system);
-                    List<Tender> l = getMatchingTenders.toCompletableFuture().get();
-                    return Source.from(l);
+                    return Source.from(getMatchingTenders.toCompletableFuture().get());
                 });
     }
 
